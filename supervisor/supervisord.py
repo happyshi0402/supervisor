@@ -36,6 +36,7 @@ import signal
 
 from supervisor.medusa import asyncore_25 as asyncore
 
+from supervisor.compat import as_string
 from supervisor.options import ServerOptions
 from supervisor.options import signame
 from supervisor import events
@@ -58,22 +59,15 @@ class Supervisor:
             # prevent crash on libdispatch-based systems, at least for the
             # first request
             self.options.cleanup_fds()
-        info_messages = []
-        critical_messages = []
-        warn_messages = []
-        setuid_msg = self.options.set_uid()
-        if setuid_msg:
-            critical_messages.append(setuid_msg)
+
+        self.options.set_uid_or_exit()
+
         if self.options.first:
-            rlimit_messages = self.options.set_rlimits()
-            info_messages.extend(rlimit_messages)
-        info_messages.extend(self.options.parse_infos)
-        warn_messages.extend(self.options.parse_warnings)
+            self.options.set_rlimits_or_exit()
 
         # this sets the options.logger object
         # delay logger instantiation until after setuid
-        self.options.make_logger(critical_messages, warn_messages,
-                                 info_messages)
+        self.options.make_logger()
 
         if not self.options.nocleanup:
             # clean up old automatic logs
@@ -128,6 +122,7 @@ class Supervisor:
     def remove_process_group(self, name):
         if self.process_groups[name].get_unstopped_processes():
             return False
+        self.process_groups[name].before_remove()
         del self.process_groups[name]
         events.notify(events.ProcessGroupRemovedEvent(name))
         return True
@@ -148,7 +143,7 @@ class Supervisor:
             # throttle 'waiting for x to die' reports
             now = time.time()
             if now > (self.lastshutdownreport + 3): # every 3 secs
-                names = [ p.config.name for p in unstopped ]
+                names = [ as_string(p.config.name) for p in unstopped ]
                 namestr = ', '.join(names)
                 self.options.logger.info('waiting for %s to die' % namestr)
                 self.lastshutdownreport = now
